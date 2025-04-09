@@ -2,40 +2,41 @@
  * Transform MongoDB document to GraphQL object
  * Converts _id to id and handles nested objects and arrays
  */
-const transformMongoDocument = (doc) => {
-  if (!doc) return null;
+const ensureId = (data) => {
+  if (!data) return null;
   
   // Handle arrays
-  if (Array.isArray(doc)) {
-    return doc.map(item => transformMongoDocument(item));
+  if (Array.isArray(data)) {
+    return data.map(item => ensureId(item));
   }
   
   // Handle plain objects
-  if (typeof doc === 'object' && doc !== null) {
-    const result = {};
+  if (typeof data === 'object' && data !== null) {
+    const result = { ...data };
     
     // Convert _id to id
-    if (doc._id) {
-      result.id = doc._id.toString();
+    if (data._id && !data.id) {
+      result.id = data._id.toString();
     }
     
-    // Copy all other fields
-    Object.keys(doc).forEach(key => {
-      if (key !== '_id') {
-        if (typeof doc[key] === 'object' && doc[key] !== null) {
-          result[key] = transformMongoDocument(doc[key]);
-        } else {
-          result[key] = doc[key];
-        }
+    // If id exists but it's not a string, convert it
+    if (result.id && typeof result.id !== 'string') {
+      result.id = result.id.toString();
+    }
+    
+    // Process nested objects
+    Object.keys(result).forEach(key => {
+      if (typeof result[key] === 'object' && result[key] !== null) {
+        result[key] = ensureId(result[key]);
       }
     });
     
     return result;
   }
   
-  return doc;
+  return data;
 };
 
 module.exports = {
-  transformMongoDocument
+  ensureId
 };

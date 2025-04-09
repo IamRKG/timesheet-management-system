@@ -2,35 +2,59 @@ const express = require('express');
 const moment = require('moment');
 const TimeSheet = require('../models/timesheet.model');
 const TimeEntry = require('../models/timeEntry.model');
-const { verifyToken, isManagerOrAdmin } = require('../middleware/auth');
+const { verifyToken } = require('../middleware/auth');
+const axios = require('axios');
 
 const router = express.Router();
+
+// Create a notification
+const createNotification = async (userId, type, title, message, relatedId, email) => {
+  try {
+    const notificationServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4004';
+    
+    await axios.post(`${notificationServiceUrl}/api/notifications`, {
+      userId,
+      type,
+      title,
+      message,
+      relatedId,
+      email
+    });
+  } catch (error) {
+    console.error('Failed to create notification:', error);
+  }
+};
 
 // Create a new timesheet
 router.post('/', verifyToken, async (req, res) => {
   try {
     const { weekStarting } = req.body;
     
-    // Format week starting date to ensure it's the start of the week
-    const formattedWeekStart = moment(weekStarting).startOf('isoWeek').toDate();
+    // Format week starting date
+    const formattedWeekStarting = moment(weekStarting).startOf('isoWeek').toDate();
     
     // Check if timesheet already exists for this week
     const existingTimesheet = await TimeSheet.findOne({
       userId: req.user._id,
-      weekStarting: formattedWeekStart
+      weekStarting: formattedWeekStarting
     });
     
     if (existingTimesheet) {
       return res.status(400).json({ 
-        message: 'A timesheet already exists for this week',
-        timesheet: existingTimesheet
+        message: 'A timesheet already exists for this week' 
       });
     }
+    
+    // Calculate week ending date (Sunday)
+    const weekEnding = moment(formattedWeekStarting).endOf('isoWeek').toDate();
     
     // Create new timesheet
     const timesheet = new TimeSheet({
       userId: req.user._id,
-      weekStarting: formattedWeekStart
+      weekStarting: formattedWeekStarting,
+      weekEnding,
+      status: 'draft',
+      totalHours: 0
     });
     
     await timesheet.save();
@@ -44,17 +68,8 @@ router.post('/', verifyToken, async (req, res) => {
 // Get all timesheets for current user
 router.get('/my', verifyToken, async (req, res) => {
   try {
-    const { status } = req.query;
-    
-    const query = { userId: req.user._id };
-    
-    if (status) {
-      query.status = status;
-    }
-    
-    const timesheets = await TimeSheet.find(query)
-      .sort({ weekStarting: -1 })
-      .populate('entries');
+    const timesheets = await TimeSheet.find({ userId: req.user._id })
+      .sort({ weekStarting: -1 });
     
     res.json(timesheets);
   } catch (error) {
@@ -62,34 +77,10 @@ router.get('/my', verifyToken, async (req, res) => {
   }
 });
 
-// Get pending approvals for managers
-router.get('/pending-approvals', verifyToken, isManagerOrAdmin, async (req, res) => {
-  try {
-    // For managers, get timesheets from their department
-    // For admins, get all pending timesheets
-    let query = { status: 'submitted' };
-    
-    if (req.user.role === 'manager' && req.user.department) {
-      // We need to find users from the same department
-      // This would typically be done by calling the auth service
-      // For simplicity, we'll assume the timesheet has a department field
-      query.department = req.user.department;
-    }
-    
-    const timesheets = await TimeSheet.find(query)
-      .sort({ submittedAt: 1 })
-      .populate('entries');
-    
-    res.json(timesheets);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
-// Get a specific timesheet
+// Get a specific timesheet with its entries
 router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const timesheet = await TimeSheet.findById(req.params.id).populate('entries');
+    const timesheet = await TimeSheet.findById(req.params.id);
     
     if (!timesheet) {
       return res.status(404).json({ message: 'Timesheet not found' });
@@ -101,13 +92,21 @@ router.get('/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
     
-    res.json(timesheet);
+    // Get all time entries for this timesheet
+    const timeEntries = await TimeEntry.find({ timesheetId: timesheet._id })
+      .sort({ date: 1, startTime: 1 });
+    
+    // Add entries to the timesheet response
+    const timesheetWithEntries = timesheet.toObject();
+    timesheetWithEntries.entries = timeEntries;
+    
+    res.json(timesheetWithEntries);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// Submit a timesheet
+// Submit a timesheet for approval
 router.post('/:id/submit', verifyToken, async (req, res) => {
   try {
     const timesheet = await TimeSheet.findById(req.params.id);
@@ -121,151 +120,205 @@ router.post('/:id/submit', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
     
-    // Check if timesheet is already submitted or approved
-    if (timesheet.status === 'submitted' || timesheet.status === 'approved') {
+    // Check if timesheet is in a state that allows submission
+    if (timesheet.status !== 'draft' && timesheet.status !== 'rejected') {
       return res.status(400).json({ 
-        message: `Timesheet is already ${timesheet.status}` 
+        message: `Cannot submit a timesheet with status: ${timesheet.status}` 
       });
     }
     
-    // Check if timesheet has entries
-    const entriesCount = await TimeEntry.countDocuments({ timesheetId: timesheet._id });
+    // Get all time entries for this timesheet
+    const timeEntries = await TimeEntry.find({ timesheetId: timesheet._id });
     
-    if (entriesCount === 0) {
-      return res.status(400).json({ message: 'Cannot submit an empty timesheet' });
+    // Check if timesheet has entries
+    if (timeEntries.length === 0) {
+      return res.status(400).json({ 
+        message: 'Cannot submit an empty timesheet' 
+      });
     }
     
-    // Update all time entries status to submitted
-    await TimeEntry.updateMany(
-      { timesheetId: timesheet._id },
-      { status: 'submitted' }
-    );
-    
     // Update timesheet status
-    timesheet.status = 'submitted';
+    timesheet.status = 'pending';
     timesheet.submittedAt = new Date();
     await timesheet.save();
     
-    // Return updated timesheet with entries
-    const updatedTimesheet = await TimeSheet.findById(timesheet._id).populate('entries');
+    // Update all time entries status
+    await TimeEntry.updateMany(
+      { timesheetId: timesheet._id },
+      { status: 'pending' }
+    );
     
-    res.json(updatedTimesheet);
+    // Notify managers about the timesheet submission
+    // In a real system, you would get the manager's ID from the user's department
+    const managerId = 'manager-id'; // Replace with actual manager ID
+    
+    await createNotification(
+      managerId,
+      'timesheet_submitted',
+      'Timesheet Submitted',
+      `A timesheet has been submitted for the week of ${moment(timesheet.weekStarting).format('MMM D, YYYY')}`,
+      timesheet._id
+    );
+    
+    // Add entries to the timesheet response
+    const timesheetWithEntries = timesheet.toObject();
+    timesheetWithEntries.entries = timeEntries;
+    
+    res.json(timesheetWithEntries);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get all pending timesheets (for managers)
+router.get('/pending/approval', verifyToken, async (req, res) => {
+  try {
+    // Check if user is a manager or admin
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    // Get all pending timesheets
+    // In a real system, you would filter by department or team
+    const pendingTimesheets = await TimeSheet.find({ status: 'pending' })
+      .sort({ submittedAt: 1 });
+    
+    // Get all time entries for these timesheets
+    const timesheetsWithEntries = await Promise.all(
+      pendingTimesheets.map(async (timesheet) => {
+        const timeEntries = await TimeEntry.find({ timesheetId: timesheet._id })
+          .sort({ date: 1, startTime: 1 });
+        
+        const timesheetObj = timesheet.toObject();
+        timesheetObj.entries = timeEntries;
+        
+        return timesheetObj;
+      })
+    );
+    
+    res.json(timesheetsWithEntries);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
 // Approve a timesheet
-router.post('/:id/approve', verifyToken, isManagerOrAdmin, async (req, res) => {
+router.post('/:id/approve', verifyToken, async (req, res) => {
   try {
+    // Check if user is a manager or admin
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    const { comments } = req.body;
+    
     const timesheet = await TimeSheet.findById(req.params.id);
     
     if (!timesheet) {
       return res.status(404).json({ message: 'Timesheet not found' });
     }
     
-    // Check if timesheet is submitted
-    if (timesheet.status !== 'submitted') {
+    // Check if timesheet is in a state that allows approval
+    if (timesheet.status !== 'pending') {
       return res.status(400).json({ 
         message: `Cannot approve a timesheet with status: ${timesheet.status}` 
       });
     }
     
-    // Update all time entries status to approved
+    // Update timesheet status
+    timesheet.status = 'approved';
+    timesheet.approvedAt = new Date();
+    timesheet.approvedBy = req.user._id;
+    timesheet.comments = comments;
+    await timesheet.save();
+    
+    // Update all time entries status
     await TimeEntry.updateMany(
       { timesheetId: timesheet._id },
       { status: 'approved' }
     );
     
-    // Update timesheet status
-    timesheet.status = 'approved';
-    timesheet.approvedAt = new Date();
-    timesheet.approvedBy = req.user._id;
+    // Notify the user about the approval
+    await createNotification(
+      timesheet.userId,
+      'timesheet_approved',
+      'Timesheet Approved',
+      `Your timesheet for the week of ${moment(timesheet.weekStarting).format('MMM D, YYYY')} has been approved.`,
+      timesheet._id
+    );
     
-    if (req.body.comments) {
-      timesheet.comments = req.body.comments;
-    }
+    // Get all time entries for this timesheet
+    const timeEntries = await TimeEntry.find({ timesheetId: timesheet._id })
+      .sort({ date: 1, startTime: 1 });
     
-    await timesheet.save();
+    // Add entries to the timesheet response
+    const timesheetWithEntries = timesheet.toObject();
+    timesheetWithEntries.entries = timeEntries;
     
-    // Return updated timesheet with entries
-    const updatedTimesheet = await TimeSheet.findById(timesheet._id).populate('entries');
-    
-    res.json(updatedTimesheet);
+    res.json(timesheetWithEntries);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
 // Reject a timesheet
-router.post('/:id/reject', verifyToken, isManagerOrAdmin, async (req, res) => {
+router.post('/:id/reject', verifyToken, async (req, res) => {
   try {
+    // Check if user is a manager or admin
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    const { comments } = req.body;
+    
+    if (!comments) {
+      return res.status(400).json({ message: 'Comments are required when rejecting a timesheet' });
+    }
+    
     const timesheet = await TimeSheet.findById(req.params.id);
     
     if (!timesheet) {
       return res.status(404).json({ message: 'Timesheet not found' });
     }
     
-    // Check if timesheet is submitted
-    if (timesheet.status !== 'submitted') {
+    // Check if timesheet is in a state that allows rejection
+    if (timesheet.status !== 'pending') {
       return res.status(400).json({ 
         message: `Cannot reject a timesheet with status: ${timesheet.status}` 
       });
     }
     
-    // Require comments for rejection
-    if (!req.body.comments) {
-      return res.status(400).json({ message: 'Comments are required when rejecting a timesheet' });
-    }
-    
-    // Update all time entries status back to draft
-    await TimeEntry.updateMany(
-      { timesheetId: timesheet._id },
-      { status: 'draft' }
-    );
-    
     // Update timesheet status
     timesheet.status = 'rejected';
-    timesheet.comments = req.body.comments;
+    timesheet.rejectedAt = new Date();
+    timesheet.rejectedBy = req.user._id;
+    timesheet.comments = comments;
     await timesheet.save();
     
-    // Return updated timesheet with entries
-    const updatedTimesheet = await TimeSheet.findById(timesheet._id).populate('entries');
+    // Update all time entries status
+    await TimeEntry.updateMany(
+      { timesheetId: timesheet._id },
+      { status: 'rejected' }
+    );
     
-    res.json(updatedTimesheet);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
-// Delete a timesheet (only if it's in draft status)
-router.delete('/:id', verifyToken, async (req, res) => {
-  try {
-    const timesheet = await TimeSheet.findById(req.params.id);
+    // Notify the user about the rejection
+    await createNotification(
+      timesheet.userId,
+      'timesheet_rejected',
+      'Timesheet Rejected',
+      `Your timesheet for the week of ${moment(timesheet.weekStarting).format('MMM D, YYYY')} has been rejected. Reason: ${comments}`,
+      timesheet._id
+    );
     
-    if (!timesheet) {
-      return res.status(404).json({ message: 'Timesheet not found' });
-    }
+    // Get all time entries for this timesheet
+    const timeEntries = await TimeEntry.find({ timesheetId: timesheet._id })
+      .sort({ date: 1, startTime: 1 });
     
-    // Check if user has permission to delete this timesheet
-    if (timesheet.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    // Add entries to the timesheet response
+    const timesheetWithEntries = timesheet.toObject();
+    timesheetWithEntries.entries = timeEntries;
     
-    // Check if timesheet is in draft status
-    if (timesheet.status !== 'draft') {
-      return res.status(400).json({ 
-        message: `Cannot delete a timesheet with status: ${timesheet.status}` 
-      });
-    }
-    
-    // Delete all associated time entries
-    await TimeEntry.deleteMany({ timesheetId: timesheet._id });
-    
-    // Delete the timesheet
-    await TimeSheet.findByIdAndDelete(timesheet._id);
-    
-    res.json({ message: 'Timesheet deleted successfully' });
+    res.json(timesheetWithEntries);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
