@@ -70,7 +70,34 @@ router.post('/', verifyToken, async (req, res) => {
   }
 });
 
-// Get all time entries for current user within date range
+// Get all time entries for a specific timesheet
+router.get('/timesheet/:timesheetId', verifyToken, async (req, res) => {
+  try {
+    const { timesheetId } = req.params;
+    
+    // Find the timesheet
+    const timesheet = await TimeSheet.findById(timesheetId);
+    
+    if (!timesheet) {
+      return res.status(404).json({ message: 'Timesheet not found' });
+    }
+    
+    // Check if user has permission to view this timesheet
+    if (timesheet.userId.toString() !== req.user._id.toString() && 
+        req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    // Get all time entries for this timesheet
+    const timeEntries = await TimeEntry.find({ timesheetId });
+    
+    res.json(timeEntries);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get all time entries for current user within a date range
 router.get('/my', verifyToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -79,11 +106,13 @@ router.get('/my', verifyToken, async (req, res) => {
     
     if (startDate || endDate) {
       query.date = {};
+      
       if (startDate) {
-        query.date.$gte = moment(startDate).startOf('day').toDate();
+        query.date.$gte = new Date(startDate);
       }
+      
       if (endDate) {
-        query.date.$lte = moment(endDate).endOf('day').toDate();
+        query.date.$lte = new Date(endDate);
       }
     }
     
@@ -104,7 +133,7 @@ router.get('/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ message: 'Time entry not found' });
     }
     
-    // Check if user has permission to view this entry
+    // Check if user has permission to view this time entry
     if (timeEntry.userId.toString() !== req.user._id.toString() && 
         req.user.role !== 'manager' && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
@@ -119,48 +148,53 @@ router.get('/:id', verifyToken, async (req, res) => {
 // Update a time entry
 router.put('/:id', verifyToken, async (req, res) => {
   try {
+    const { date, startTime, endTime, project, description } = req.body;
+    
+    // Find the time entry
     const timeEntry = await TimeEntry.findById(req.params.id);
     
     if (!timeEntry) {
       return res.status(404).json({ message: 'Time entry not found' });
     }
     
-    // Check if user has permission to update this entry
+    // Check if user has permission to update this time entry
     if (timeEntry.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Access denied' });
     }
     
-    // Get associated timesheet
+    // Find the associated timesheet
     const timesheet = await TimeSheet.findById(timeEntry.timesheetId);
     
-    // Check if timesheet is already submitted or approved
-    if (timesheet && (timesheet.status === 'submitted' || timesheet.status === 'approved')) {
+    // Check if timesheet is in a state that allows updates
+    if (timesheet.status !== 'draft' && timesheet.status !== 'rejected') {
       return res.status(400).json({ 
         message: `Cannot update entries in a timesheet with status: ${timesheet.status}` 
       });
     }
     
-    const { date, startTime, endTime, project, description } = req.body;
+    // Update the time entry
+    if (date) timeEntry.date = new Date(date);
+    if (startTime) timeEntry.startTime = startTime;
+    if (endTime) timeEntry.endTime = endTime;
+    if (project) timeEntry.project = project;
+    if (description) timeEntry.description = description;
     
-    // Update time entry
-    const updatedEntry = await TimeEntry.findByIdAndUpdate(
-      req.params.id,
-      {
-        date: date ? moment(date).startOf('day').toDate() : timeEntry.date,
-        startTime: startTime || timeEntry.startTime,
-        endTime,
-        project,
-        description
-      },
-      { new: true, runValidators: true }
-    );
-    
-    // Update timesheet total hours
-    if (timesheet) {
-      await updateTimesheetTotalHours(timesheet._id);
+    // Calculate duration if both start and end times are provided
+    if (startTime && endTime) {
+      const startMinutes = convertTimeToMinutes(startTime);
+      const endMinutes = convertTimeToMinutes(endTime);
+      
+      if (endMinutes > startMinutes) {
+        timeEntry.duration = (endMinutes - startMinutes) / 60;
+      }
     }
     
-    res.json(updatedEntry);
+    await timeEntry.save();
+    
+    // Update timesheet total hours
+    await updateTimesheetTotalHours(timesheet._id);
+    
+    res.json(timeEntry);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -169,33 +203,34 @@ router.put('/:id', verifyToken, async (req, res) => {
 // Delete a time entry
 router.delete('/:id', verifyToken, async (req, res) => {
   try {
+    // Find the time entry
     const timeEntry = await TimeEntry.findById(req.params.id);
     
     if (!timeEntry) {
       return res.status(404).json({ message: 'Time entry not found' });
     }
     
-    // Check if user has permission to delete this entry
-    if (timeEntry.userId.toString() !== req.user._id.toString()) {
+    // Check if user has permission to delete this time entry
+    if (timeEntry.userId.toString() !== req.user._id.toString() && 
+        req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
     }
     
-    // Get associated timesheet
+    // Find the associated timesheet
     const timesheet = await TimeSheet.findById(timeEntry.timesheetId);
     
-    // Check if timesheet is already submitted or approved
-    if (timesheet && (timesheet.status === 'submitted' || timesheet.status === 'approved')) {
+    // Check if timesheet is in a state that allows deletions
+    if (timesheet.status !== 'draft' && timesheet.status !== 'rejected') {
       return res.status(400).json({ 
         message: `Cannot delete entries from a timesheet with status: ${timesheet.status}` 
       });
     }
     
+    // Delete the time entry
     await TimeEntry.findByIdAndDelete(req.params.id);
     
     // Update timesheet total hours
-    if (timesheet) {
-      await updateTimesheetTotalHours(timesheet._id);
-    }
+    await updateTimesheetTotalHours(timesheet._id);
     
     res.json({ message: 'Time entry deleted successfully' });
   } catch (error) {
@@ -203,17 +238,25 @@ router.delete('/:id', verifyToken, async (req, res) => {
   }
 });
 
+// Helper function to convert time string (HH:MM) to minutes
+function convertTimeToMinutes(timeString) {
+  const [hours, minutes] = timeString.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
 // Helper function to update timesheet total hours
 async function updateTimesheetTotalHours(timesheetId) {
-  const entries = await TimeEntry.find({ timesheetId });
-  
-  const totalHours = entries.reduce((sum, entry) => {
-    return sum + (entry.duration || 0);
-  }, 0);
-  
-  await TimeSheet.findByIdAndUpdate(timesheetId, { 
-    totalHours: parseFloat(totalHours.toFixed(2)) 
-  });
+  try {
+    const timeEntries = await TimeEntry.find({ timesheetId });
+    
+    const totalHours = timeEntries.reduce((total, entry) => {
+      return total + (entry.duration || 0);
+    }, 0);
+    
+    await TimeSheet.findByIdAndUpdate(timesheetId, { totalHours });
+  } catch (error) {
+    console.error('Error updating timesheet total hours:', error);
+  }
 }
 
 // Add this test endpoint
