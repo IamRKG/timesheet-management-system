@@ -1,34 +1,48 @@
-# Node.js
-node_modules/
+# Ignore node_modules in all subfolders
+**/node_modules/
+
+# Logs
+**/*.log
+logs
+*.log.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
-yarn.lock
-.pnpm-debug.log
 
-# Logs
-logs
-*.log
-*.log.*
+# Dependency locks (optional: keep them if you prefer version locking per service)
+**/package-lock.json
+**/yarn.lock
 
-# Environment files
-.env
-.env.*
+# Environment variables
+**/.env
+**/.env.*
 
-# OS-related
+# OS files
 .DS_Store
 Thumbs.db
 
-# Editor folders
+# IDE folders
 .vscode/
 .idea/
 
-# Build output
-dist/
-build/
-coverage/
+# Build outputs
+**/dist/
+**/build/
+**/coverage/
 
-# Optional: if you're using TypeScript
-*.tsbuildinfo
+# TypeScript
+**/*.tsbuildinfo
+
+# PM2 logs
+.pids
+*.pid
+*.seed
+dump.rdb
+
+# Docker artifacts (if using)
+docker-compose.override.yml
+.docker/
+
+# Misc
+*.swp
