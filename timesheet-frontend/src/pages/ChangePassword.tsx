@@ -3,139 +3,150 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/layout';
+import { useAuthStore } from '../store/authStore';
+import axios from 'axios';
 
 export function ChangePassword() {
   const navigate = useNavigate();
-  const { changePassword, loading, error: storeError } = useAuthStore();
+  const { user, token } = useAuthStore();
   
   const [formData, setFormData] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: '',
+    confirmPassword: ''
   });
   
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
+  
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      [name]: value,
+      [name]: value
     }));
   };
-
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    // Validate form
-    if (!formData.currentPassword || !formData.newPassword || !formData.confirmPassword) {
-      setError('Please fill in all fields');
-      return;
-    }
-
+    
     if (formData.newPassword !== formData.confirmPassword) {
       setError('New passwords do not match');
       return;
     }
-
+    
     if (formData.newPassword.length < 6) {
       setError('New password must be at least 6 characters long');
       return;
     }
-
+    
+    setLoading(true);
+    
     try {
-      await changePassword(formData.currentPassword, formData.newPassword);
-      setSuccess('Password changed successfully');
+      const response = await axios.post(
+        import.meta.env.VITE_API_URL || 'http://localhost:4000/graphql',
+        {
+          query: `
+            mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
+              changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
+            }
+          `,
+          variables: {
+            currentPassword: formData.currentPassword,
+            newPassword: formData.newPassword
+          }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
       
-      // Clear form
-      setFormData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-      });
-      
-      // Redirect after a short delay
-      setTimeout(() => {
-        navigate('/profile');
-      }, 2000);
+      if (response.data.errors) {
+        setError(response.data.errors[0].message);
+      } else {
+        setSuccess('Password changed successfully');
+        setFormData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+      }
     } catch (err: any) {
-      console.error('Password change error:', err);
-      setError(err.message || 'Failed to change password. Please try again.');
+      setError(err.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
     }
   };
-
+  
   return (
     <Layout title="Change Password" showBackButton backUrl="/profile">
       <div className="mx-auto max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        {(error || storeError) && (
+        {error && (
           <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-600">
-            {error || storeError}
+            {error}
           </div>
         )}
-
+        
         {success && (
           <div className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-600">
             {success}
           </div>
         )}
-
+        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="currentPassword" className="text-navy-700">Current Password</Label>
+            <Label htmlFor="currentPassword">Current Password</Label>
             <Input
               id="currentPassword"
               name="currentPassword"
               type="password"
               value={formData.currentPassword}
               onChange={handleChange}
-              className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
               required
             />
           </div>
-
+          
           <div className="space-y-2">
-            <Label htmlFor="newPassword" className="text-navy-700">New Password</Label>
+            <Label htmlFor="newPassword">New Password</Label>
             <Input
               id="newPassword"
               name="newPassword"
               type="password"
               value={formData.newPassword}
               onChange={handleChange}
-              className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
               required
             />
           </div>
-
+          
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword" className="text-navy-700">Confirm New Password</Label>
+            <Label htmlFor="confirmPassword">Confirm New Password</Label>
             <Input
               id="confirmPassword"
               name="confirmPassword"
               type="password"
               value={formData.confirmPassword}
               onChange={handleChange}
-              className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
               required
             />
           </div>
-
-          <div className="pt-4 flex justify-end space-x-3">
-            <Button 
-              type="button" 
+          
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
               variant="outline"
-              className="border-gray-300 text-gray-700"
               onClick={() => navigate('/profile')}
             >
               Cancel
             </Button>
-            <Button 
-              type="submit" 
-              className="bg-navy-600 text-white hover:bg-navy-700" 
+            
+            <Button
+              type="submit"
               disabled={loading}
             >
               {loading ? 'Changing...' : 'Change Password'}
