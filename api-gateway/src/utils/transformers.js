@@ -1,6 +1,5 @@
 /**
- * Transform MongoDB document to GraphQL object
- * Converts _id to id and handles nested objects and arrays
+ * @deprecated Use mongoTransformer.transformMongoDocument instead
  */
 const transformMongoDocument = (doc) => {
   if (!doc) return null;
@@ -35,7 +34,6 @@ const transformMongoDocument = (doc) => {
   
   return doc;
 };
-
 module.exports = {
   transformMongoDocument
 };

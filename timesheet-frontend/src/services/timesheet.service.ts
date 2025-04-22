@@ -16,7 +16,6 @@ export interface TimeEntry {
   createdAt?: string;
   updatedAt?: string;
 }
-
 export interface TimeSheet {
   id: string;
   userId: string;
