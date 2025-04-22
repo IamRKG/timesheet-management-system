@@ -28,9 +28,10 @@ const typeDefs = gql`
     description: String
     status: String!
     timesheetId: ID
-    createdAt: String!
-    updatedAt: String!
-  }  
+    createdAt: String
+    updatedAt: String
+  }
+  
   type TimeSheet {
     id: ID!
     userId: ID!
@@ -44,8 +45,7 @@ const typeDefs = gql`
     comments: String
     createdAt: String!
     updatedAt: String!
-  }
-  
+  }  
   type AuthPayload {
     token: String!
     user: User!
@@ -68,7 +68,7 @@ const typeDefs = gql`
     role: String!
     department: String
   }
-
+  
   input UserUpdateInput {
     firstName: String
     lastName: String
@@ -90,7 +90,7 @@ const typeDefs = gql`
     
     # TimeEntry queries
     timeEntry(id: ID!): TimeEntry
-    myTimeEntries(startDate: String!, endDate: String!): [TimeEntry!]!
+    myTimeEntries(startDate: String, endDate: String): [TimeEntry!]!
     
     # Reporting
     departmentReport(department: String!, startDate: String!, endDate: String!): [TimeSheet!]!
@@ -102,6 +102,8 @@ const typeDefs = gql`
     # Auth mutations
     register(input: UserInput!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!
+    
+    # User mutations
     updateUser(id: ID!, input: UserUpdateInput!): User!
     changePassword(currentPassword: String!, newPassword: String!): Boolean!
     
@@ -115,5 +117,7 @@ const typeDefs = gql`
     submitTimeSheet(id: ID!): TimeSheet!
     approveTimeSheet(id: ID!, comments: String): TimeSheet!
     rejectTimeSheet(id: ID!, comments: String!): TimeSheet!
-  }`;
+  }
+`;
+
 module.exports = typeDefs;

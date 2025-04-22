@@ -76,15 +76,35 @@ class TimesheetService {
       );
 
       if (response.data.errors) {
-        throw new Error(response.data.errors[0].message);
+        console.error('GraphQL errors:', response.data.errors);
+        const errorMessage = response.data.errors[0].message;
+        
+        // Check if this is a duplicate entry error
+        if (errorMessage.includes('already exists')) {
+          throw new Error(errorMessage);
+        }
+        
+        throw new Error(errorMessage);
       }
 
       return response.data.data.createTimeEntry;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || error.message || 'Failed to create time entry');
+      console.error('Error creating time entry:', error);
+      
+      // Properly extract and propagate the error message
+      if (error.response?.data?.errors) {
+        const errorMessage = error.response.data.errors[0].message;
+        throw new Error(errorMessage);
+      }
+      
+      // If it's already an Error object with a message, just rethrow it
+      if (error.message) {
+        throw error;
+      }
+      
+      throw new Error('Failed to create time entry');
     }
   }
-
   async getTimeEntry(token: string, id: string): Promise<TimeEntry> {
     try {
       const response = await axios.post(
@@ -293,15 +313,25 @@ class TimesheetService {
       );
 
       if (response.data.errors) {
+        console.error('GraphQL errors:', response.data.errors);
         throw new Error(response.data.errors[0].message);
       }
 
-      return response.data.data.createTimeSheet;
+      // Ensure entries is always an array
+      const timesheet = response.data.data.createTimeSheet;
+      if (!timesheet.entries) {
+        timesheet.entries = [];
+      }
+
+      return timesheet;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || error.message || 'Failed to create timesheet');
+      console.error('Error creating timesheet:', error);
+      if (error.response?.data?.errors) {
+        throw new Error(error.response.data.errors[0].message);
+      }
+      throw new Error(error.message || 'Failed to create timesheet');
     }
   }
-
   async getTimesheet(token: string, id: string): Promise<TimeSheet> {
     try {
       const response = await axios.post(
@@ -396,7 +426,11 @@ class TimesheetService {
   }
 
   async submitTimesheet(token: string, id: string): Promise<TimeSheet> {
+    console.log('submitTimesheet service called with ID:', id);
+    console.log('Token exists:', !!token);
+    
     try {
+      console.log('Sending GraphQL mutation to API:', API_URL);
       const response = await axios.post(
         API_URL,
         {
@@ -436,17 +470,31 @@ class TimesheetService {
         }
       );
 
+      console.log('GraphQL response received:', response.status);
+      
       if (response.data.errors) {
+        console.error('GraphQL errors in response:', response.data.errors);
         throw new Error(response.data.errors[0].message);
       }
 
+      console.log('GraphQL data:', response.data.data);
+      
+      if (!response.data.data || !response.data.data.submitTimeSheet) {
+        console.error('Missing data in GraphQL response:', response.data);
+        throw new Error('Invalid response from server');
+      }
+      
+      console.log('Timesheet submission successful, returning data');
       return response.data.data.submitTimeSheet;
     } catch (error: any) {
+      console.error('Error in submitTimesheet service:', error);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw new Error(error.response?.data?.message || error.message || 'Failed to submit timesheet');
     }
-  }
-
-  // For managers/admins
+  }  // For managers/admins
   async getPendingApprovals(token: string): Promise<TimeSheet[]> {
     try {
       const response = await axios.post(

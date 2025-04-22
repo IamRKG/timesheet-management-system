@@ -2,42 +2,18 @@ const express = require('express');
 const { ApolloServer } = require('apollo-server-express');
 const cors = require('cors');
 const helmet = require('helmet');
-const net = require('net');
+const axios = require('axios'); // Add this import
+const jwt = require('jsonwebtoken'); // Also add this for token verification
 require('dotenv').config();
 
 const typeDefs = require('./schema');
 const resolvers = require('./resolvers');
-// Function to check if a port is in use
-function isPortInUse(port) {
-  return new Promise((resolve) => {
-    const server = net.createServer()
-      .once('error', () => {
-        resolve(true); // Port is in use
-      })
-      .once('listening', () => {
-        server.close();
-        resolve(false); // Port is available
-      })
-      .listen(port);
-  });
-}
 
-// Function to find an available port
-async function findAvailablePort(startPort, maxAttempts = 10) {
-  let port = startPort;
-  let attempts = 0;
-  
-  while (attempts < maxAttempts) {
-    const inUse = await isPortInUse(port);
-    if (!inUse) {
-      return port;
-    }
-    port++;
-    attempts++;
-  }
-  
-  throw new Error(`Could not find an available port after ${maxAttempts} attempts`);
-}
+// Service URLs
+const AUTH_SERVICE = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+const TIMESHEET_SERVICE = process.env.TIMESHEET_SERVICE_URL || 'http://localhost:4002';
+const REPORTING_SERVICE = process.env.REPORTING_SERVICE_URL || 'http://localhost:4003';
+const NOTIFICATION_SERVICE = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4004';
 
 async function startServer() {
   const app = express();
@@ -54,23 +30,39 @@ async function startServer() {
     context: ({ req }) => {
       // Extract auth token from headers
       const token = req.headers.authorization || '';
-      return { token };
-    },
-  });
+      
+      // Create a user object if token exists
+      let user = null;
+      if (token) {
+        try {
+          // This is a simplified example - in production, you'd verify the token
+          // and extract the user information
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+          user = { id: decoded.id }; // Make sure this matches what the timesheet service expects
+        } catch (error) {
+          console.error('Invalid token:', error.message);
+        }
+      }
+      
+      // Create service objects for making requests to microservices
+      const services = {
+        authService: axios.create({ baseURL: AUTH_SERVICE }),
+        timesheetService: axios.create({ baseURL: TIMESHEET_SERVICE }),
+        reportingService: axios.create({ baseURL: REPORTING_SERVICE }),
+        notificationService: axios.create({ baseURL: NOTIFICATION_SERVICE }),
+        getAuthToken: () => token
+      };
+      
+      return { token, user, services };
+    },  });
   
   await server.start();
   server.applyMiddleware({ app });
   
-  // Find an available port starting from the preferred port
-  const preferredPort = parseInt(process.env.PORT || '4000', 10);
-  const PORT = await findAvailablePort(preferredPort);
-  
+  const PORT = process.env.PORT || 4000;
   app.listen(PORT, () => {
     console.log(`API Gateway running at http://localhost:${PORT}${server.graphqlPath}`);
   });
 }
 
-startServer().catch(err => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+startServer();

@@ -78,6 +78,12 @@ export const useTimesheetStore = create<TimesheetState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const timesheet = await timesheetService.createTimesheet(token, weekStarting);
+      
+      // Ensure entries is always an array
+      if (!timesheet.entries) {
+        timesheet.entries = [];
+      }
+      
       set(state => ({ 
         timesheets: [timesheet, ...state.timesheets],
         currentTimesheet: timesheet,
@@ -88,30 +94,43 @@ export const useTimesheetStore = create<TimesheetState>((set, get) => ({
       set({ error: error.message, loading: false });
       throw error;
     }
-  },
-  
+  },  
   submitTimesheet: async (id: string) => {
     const { token } = useAuthStore.getState();
-    if (!token) throw new Error('Not authenticated');
+    console.log('submitTimesheet action called with ID:', id);
+    
+    if (!token) {
+      console.error('No authentication token available');
+      throw new Error('Not authenticated');
+    }
     
     set({ loading: true, error: null });
+    console.log('Setting loading state, calling timesheet service');
+    
     try {
+      console.log('Calling submitTimesheet service with token and ID');
       const updatedTimesheet = await timesheetService.submitTimesheet(token, id);
+      console.log('Service call successful, received updated timesheet:', updatedTimesheet);
       
       // Update both the current timesheet and the timesheet in the list
-      set(state => ({
-        currentTimesheet: updatedTimesheet,
-        timesheets: state.timesheets.map(ts => 
-          ts.id === id ? updatedTimesheet : ts
-        ),
-        loading: false
-      }));
+      set(state => {
+        console.log('Updating store state with new timesheet data');
+        return {
+          currentTimesheet: updatedTimesheet,
+          timesheets: state.timesheets.map(ts => 
+            ts.id === id ? updatedTimesheet : ts
+          ),
+          loading: false
+        };
+      });
+      
+      console.log('Store state updated successfully');
     } catch (error: any) {
+      console.error('Error in submitTimesheet action:', error);
       set({ error: error.message, loading: false });
       throw error;
     }
-  },
-  
+  },  
   // Time entry actions
   fetchMyTimeEntries: async (startDate?: string, endDate?: string) => {
     const { token } = useAuthStore.getState();

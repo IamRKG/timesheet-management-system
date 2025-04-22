@@ -15,7 +15,7 @@ const resolvers = {
         const response = await axios.get(`${AUTH_SERVICE}/api/users/me`, {
           headers: { Authorization: token }
         });
-        return transformMongoDocument(response.data);
+        return response.data;
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to fetch user data');
       }
@@ -180,10 +180,18 @@ const resolvers = {
         );
         return response.data;
       } catch (error) {
+        console.error('Error creating time entry:', error.message);
+        
+        // Check for specific error status codes
+        if (error.response?.status === 409) {
+          // This is a duplicate entry error
+          throw new Error(error.response.data.message || 'A time entry already exists for this date');
+        }
+        
+        // For other errors
         throw new Error(error.response?.data?.message || 'Failed to create time entry');
       }
-    },
-    
+    },    
     updateTimeEntry: async (_, { id, input }, { token }) => {
       try {
         const response = await axios.put(
@@ -218,7 +226,7 @@ const resolvers = {
           { headers: { Authorization: token } }
         );
         
-        // Ensure entries is always an array, even if empty
+        // Ensure entries is always an array
         const timesheet = response.data;
         if (!timesheet.entries) {
           timesheet.entries = [];
@@ -230,30 +238,45 @@ const resolvers = {
       }
     },    
     submitTimeSheet: async (_, { id }, { token }) => {
+      console.log('submitTimeSheet resolver called with ID:', id);
+      console.log('Token exists:', !!token);
+      
       try {
+        console.log('Calling timesheet service endpoint:', `${TIMESHEET_SERVICE}/api/timesheets/${id}/submit`);
         const response = await axios.post(
           `${TIMESHEET_SERVICE}/api/timesheets/${id}/submit`,
           {},
           { headers: { Authorization: token } }
         );
         
+        console.log('Timesheet service response status:', response.status);
+        console.log('Timesheet service response data:', response.data);
+        
         // Notify manager about submission
         try {
+          console.log('Attempting to notify manager about submission');
           await axios.post(
             `${NOTIFICATION_SERVICE}/api/notifications/timesheet-submitted`,
             { timesheetId: id },
             { headers: { Authorization: token } }
           );
+          console.log('Manager notification sent successfully');
         } catch (notifyError) {
-          console.error('Notification failed:', notifyError);
+          console.error('Notification failed:', notifyError.message);
+          // Don't let notification failure stop the process
         }
         
+        console.log('Returning timesheet data from resolver');
         return response.data;
       } catch (error) {
+        console.error('Error in submitTimeSheet resolver:', error.message);
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', error.response.data);
+        }
         throw new Error(error.response?.data?.message || 'Failed to submit timesheet');
       }
-    },
-    
+    },    
     approveTimeSheet: async (_, { id, comments }, { token }) => {
       try {
         const response = await axios.post(
@@ -313,30 +336,23 @@ const resolvers = {
         );
         return response.data;
       } catch (error) {
-        throw new Error(error.response?.data?.message || 'Failed to update user profile');
+        throw new Error(error.response?.data?.message || 'Failed to update user');
       }
     },
 
     changePassword: async (_, { currentPassword, newPassword }, { token }) => {
       try {
-        // First, get the current user's ID from the token
-        const meResponse = await axios.get(`${AUTH_SERVICE}/api/users/me`, {
-          headers: { Authorization: token }
-        });
-        
-        const userId = meResponse.data.id || meResponse.data._id;
-        
-        // Then, call the change password endpoint
-        await axios.put(
-          `${AUTH_SERVICE}/api/users/${userId}/change-password`,
+        const response = await axios.put(
+          `${AUTH_SERVICE}/api/users/change-password`,
           { currentPassword, newPassword },
           { headers: { Authorization: token } }
         );
-        
         return true;
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to change password');
       }
-    },
-  }}
+    }
+  }
+};
+
 module.exports = resolvers;

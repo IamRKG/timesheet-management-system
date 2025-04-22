@@ -14,8 +14,35 @@ router.post('/', verifyToken, async (req, res) => {
     
     const { date, startTime, endTime, project, description } = req.body;
     
-    // Format date to ensure consistency
-    const formattedDate = moment(date).startOf('day').toDate();
+    // Format date to ensure consistency - strip time part
+    const formattedDate = moment(date).startOf('day');
+    const dateString = formattedDate.format('YYYY-MM-DD');
+    
+    console.log('Checking for existing entry on date:', dateString);
+    
+    // Check if an entry already exists for this date - using date string comparison
+    const existingEntries = await TimeEntry.find({
+      userId: req.user._id
+    });
+    
+    // Convert dates to YYYY-MM-DD format for comparison
+    const hasDuplicate = existingEntries.some(entry => {
+      const entryDateString = moment(entry.date).format('YYYY-MM-DD');
+      const isDuplicate = entryDateString === dateString;
+      if (isDuplicate) {
+        console.log('Found duplicate entry:', entry._id);
+      }
+      return isDuplicate;
+    });
+    
+    if (hasDuplicate) {
+      console.log('Duplicate entry found for date:', dateString);
+      // Return a clear error message with a specific status code
+      return res.status(409).json({ 
+        message: `A time entry already exists for ${formattedDate.format('MMMM D, YYYY')}`,
+        code: 'DUPLICATE_ENTRY'
+      });
+    }
     
     // Find or create timesheet for this week
     const weekStart = moment(formattedDate).startOf('isoWeek').toDate();
@@ -43,7 +70,7 @@ router.post('/', verifyToken, async (req, res) => {
     // Create time entry
     const timeEntry = new TimeEntry({
       userId: req.user._id,
-      date: formattedDate,
+      date: formattedDate.toDate(),
       startTime,
       endTime,
       project,
@@ -68,9 +95,7 @@ router.post('/', verifyToken, async (req, res) => {
     console.error('Error creating time entry:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
-});
-
-// Get all time entries for a specific timesheet
+});// Get all time entries for a specific timesheet
 router.get('/timesheet/:timesheetId', verifyToken, async (req, res) => {
   try {
     const { timesheetId } = req.params;
@@ -172,8 +197,49 @@ router.put('/:id', verifyToken, async (req, res) => {
       });
     }
     
-    // Update the time entry
-    if (date) timeEntry.date = new Date(date);
+    // If date is being changed, check for duplicate
+    if (date) {
+      const currentDateString = moment(timeEntry.date).format('YYYY-MM-DD');
+      const newDateString = moment(date).format('YYYY-MM-DD');
+      
+      console.log('Comparing dates:', {
+        currentDateString,
+        newDateString,
+        isDifferent: currentDateString !== newDateString
+      });
+      
+      if (currentDateString !== newDateString) {
+        console.log('Date is being changed, checking for duplicates');
+        
+        // Get all entries for this user
+        const existingEntries = await TimeEntry.find({
+          userId: req.user._id,
+          _id: { $ne: timeEntry._id } // Exclude the current entry
+        });
+        
+        // Check for duplicate date
+        const hasDuplicate = existingEntries.some(entry => {
+          const entryDateString = moment(entry.date).format('YYYY-MM-DD');
+          const isDuplicate = entryDateString === newDateString;
+          if (isDuplicate) {
+            console.log('Found duplicate entry:', entry._id);
+          }
+          return isDuplicate;
+        });
+        
+        if (hasDuplicate) {
+          console.log('Duplicate entry found for date:', newDateString);
+          return res.status(400).json({ 
+            message: `A time entry already exists for ${moment(date).format('MMMM D, YYYY')}` 
+          });
+        }
+        
+        // Update the date
+        timeEntry.date = moment(date).startOf('day').toDate();
+      }
+    }
+    
+    // Update the other fields
     if (startTime) timeEntry.startTime = startTime;
     if (endTime) timeEntry.endTime = endTime;
     if (project) timeEntry.project = project;
@@ -198,9 +264,7 @@ router.put('/:id', verifyToken, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
-});
-
-// Delete a time entry
+});// Delete a time entry
 router.delete('/:id', verifyToken, async (req, res) => {
   try {
     // Find the time entry
