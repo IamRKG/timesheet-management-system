@@ -4,6 +4,8 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Alert } from '../components/ui/alert';
+import { Spinner } from '../components/ui/spinner';
 import { useAuthStore } from '../store/authStore';
 
 export function Register() {
@@ -20,7 +22,6 @@ export function Register() {
     department: '',
   });
   
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,94 +78,99 @@ export function Register() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white p-10">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-md">
+        <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-navy-700">Create an Account</h1>
           <p className="mt-2 text-gray-600">
             Sign up to start tracking your time
           </p>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="card">
           {(error || storeError) && (
-            <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-600">
+            <Alert 
+              variant="error" 
+              className="mb-6"
+              onClose={() => setError('')}
+            >
               {error || storeError}
-            </div>
+            </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="firstName" className="text-navy-700">First Name</Label>
+                <Label htmlFor="firstName" className="text-gray-700">First Name</Label>
                 <Input
                   id="firstName"
                   name="firstName"
                   value={formData.firstName}
                   onChange={handleChange}
-                  className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
+                  className="form-input"
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName" className="text-navy-700">Last Name</Label>
+                <Label htmlFor="lastName" className="text-gray-700">Last Name</Label>
                 <Input
                   id="lastName"
                   name="lastName"
                   value={formData.lastName}
                   onChange={handleChange}
-                  className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
+                  className="form-input"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-navy-700">Email</Label>
+              <Label htmlFor="email" className="text-gray-700">Email</Label>
               <Input
                 id="email"
                 name="email"
                 type="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
+                className="form-input"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-navy-700">Password</Label>
+              <Label htmlFor="password" className="text-gray-700">Password</Label>
               <Input
                 id="password"
                 name="password"
                 type="password"
                 value={formData.password}
                 onChange={handleChange}
-                className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
+                className="form-input"
                 required
               />
+              <p className="text-xs text-gray-500">Password must be at least 6 characters long</p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-navy-700">Confirm Password</Label>
+              <Label htmlFor="confirmPassword" className="text-gray-700">Confirm Password</Label>
               <Input
                 id="confirmPassword"
                 name="confirmPassword"
                 type="password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="border-gray-300 focus:border-navy-500 focus:ring-navy-500"
+                className="form-input"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="role" className="text-navy-700">Role</Label>
+              <Label htmlFor="role" className="text-gray-700">Role</Label>
               <Select
                 value={formData.role}
                 onValueChange={(value) => handleSelectChange('role', value)}
               >
-                <SelectTrigger className="border-gray-300 bg-white text-navy-700 focus:border-navy-500 focus:ring-navy-500">
+                <SelectTrigger className="form-input">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
                 <SelectContent className="bg-white border border-gray-200">
@@ -175,12 +181,12 @@ export function Register() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="department" className="text-navy-700">Department</Label>
+              <Label htmlFor="department" className="text-gray-700">Department</Label>
               <Select
                 value={formData.department}
                 onValueChange={(value) => handleSelectChange('department', value)}
               >
-                <SelectTrigger className="border-gray-300 bg-white text-navy-700 focus:border-navy-500 focus:ring-navy-500">
+                <SelectTrigger className="form-input">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent className="bg-white border border-gray-200">
@@ -196,17 +202,24 @@ export function Register() {
 
             <Button 
               type="submit" 
-              className="w-full bg-navy-600 text-white hover:bg-navy-700" 
+              className="w-full btn-primary" 
               disabled={isRegistering}
             >
-              {isRegistering ? 'Creating account...' : 'Register'}
+              {isRegistering ? (
+                <div className="flex items-center justify-center">
+                  <Spinner size="sm" variant="white" className="mr-2" />
+                  <span>Creating account...</span>
+                </div>
+              ) : (
+                'Create Account'
+              )}
             </Button>
           </form>
         </div>
 
-        <div className="text-center text-sm text-gray-600">
+        <div className="mt-6 text-center text-sm text-gray-600">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-navy-600 hover:underline">
+          <Link to="/login" className="font-medium text-navy-600 hover:text-navy-800 hover:underline">
             Sign in
           </Link>
         </div>

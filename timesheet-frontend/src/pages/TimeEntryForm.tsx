@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Button } from '../components/ui/button';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Layout } from '../components/layout';
+import { Alert } from '../components/ui/alert';
+import { Spinner } from '../components/ui/spinner';
 import { useTimesheetStore } from '../store/timesheetStore';
 import { TimeEntryInput } from '../services/timesheet.service';
 
 export function TimeEntryForm() {
   const { id } = useParams<{ id?: string }>();
+  const location = useLocation();
   const isEditing = !!id;
   const navigate = useNavigate();
   
@@ -31,6 +34,16 @@ export function TimeEntryForm() {
   });
   
   const [formError, setFormError] = useState('');
+  const [timesheetId, setTimesheetId] = useState<string | null>(null);
+
+  // Extract timesheetId from query params if present
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tsId = params.get('timesheetId');
+    if (tsId) {
+      setTimesheetId(tsId);
+    }
+  }, [location]);
 
   useEffect(() => {
     clearError();
@@ -50,12 +63,16 @@ export function TimeEntryForm() {
   useEffect(() => {
     if (currentTimeEntry && isEditing) {
       setFormData({
-        date: currentTimeEntry.date,
+        date: format(parseISO(currentTimeEntry.date), 'yyyy-MM-dd'),
         startTime: currentTimeEntry.startTime,
         endTime: currentTimeEntry.endTime || '',
         project: currentTimeEntry.project || '',
         description: currentTimeEntry.description || '',
       });
+      
+      if (currentTimeEntry.timesheetId) {
+        setTimesheetId(currentTimeEntry.timesheetId);
+      }
     }
   }, [currentTimeEntry, isEditing]);
 
@@ -65,6 +82,25 @@ export function TimeEntryForm() {
       ...prev,
       [name]: value,
     }));
+  };
+
+  const calculateDuration = () => {
+    if (!formData.startTime || !formData.endTime) return null;
+    
+    const [startHours, startMinutes] = formData.startTime.split(':').map(Number);
+    const [endHours, endMinutes] = formData.endTime.split(':').map(Number);
+    
+    let durationInMinutes = (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
+    
+    // Handle case where end time is on the next day
+    if (durationInMinutes < 0) {
+      durationInMinutes += 24 * 60;
+    }
+    
+    const hours = Math.floor(durationInMinutes / 60);
+    const minutes = durationInMinutes % 60;
+    
+    return `${hours}h ${minutes}m`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -78,7 +114,9 @@ export function TimeEntryForm() {
         navigate(`/time-entries/${id}`);
       } else {
         const newEntry = await createTimeEntry(formData);
-        if (newEntry.timesheetId) {
+        if (timesheetId) {
+          navigate(`/timesheets/${timesheetId}`);
+        } else if (newEntry.timesheetId) {
           navigate(`/timesheets/${newEntry.timesheetId}`);
         } else {
           navigate('/dashboard');
@@ -89,11 +127,15 @@ export function TimeEntryForm() {
     }
   };
 
-  if (loading) {
+  const duration = calculateDuration();
+
+  if (loading && isEditing && !currentTimeEntry) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-navy-600 border-t-transparent"></div>
-      </div>
+      <Layout title="Time Entry" showBackButton>
+        <div className="flex justify-center py-12">
+          <Spinner label="Loading time entry..." />
+        </div>
+      </Layout>
     );
   }
 
@@ -101,112 +143,139 @@ export function TimeEntryForm() {
     <Layout 
       title={isEditing ? 'Edit Time Entry' : 'Log Time Entry'} 
       showBackButton 
-      backUrl={isEditing && currentTimeEntry?.timesheetId 
-        ? `/timesheets/${currentTimeEntry.timesheetId}` 
-        : '/dashboard'
-      }
+      backUrl={timesheetId ? `/timesheets/${timesheetId}` : '/dashboard'}
     >
-      <div className="mx-auto max-w-2xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-2xl">
         {(formError || error) && (
-          <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-600">
+          <Alert 
+            variant="error" 
+            className="mb-6"
+            onClose={() => {
+              setFormError('');
+              clearError();
+            }}
+          >
             {formError || error}
-          </div>
+          </Alert>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label htmlFor="date" className="mb-2 block text-sm font-medium text-navy-700">
-              Date
-            </label>
-            <input
-              type="date"
-              id="date"
-              name="date"
-              value={formData.date}
-              onChange={handleChange}
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-navy-500 focus:ring-navy-500"
-              required
-            />
-          </div>
+        <div className="card">
+          <h2 className="mb-6 text-xl font-bold text-navy-700">
+            {isEditing ? 'Edit Time Entry' : 'New Time Entry'}
+          </h2>
 
-          <div className="mb-4 grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <label htmlFor="date" className="form-label">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  id="date"
+                  name="date"
+                  value={formData.date}
+                  onChange={handleChange}
+                  className="form-input"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="project" className="form-label">
+                  Project
+                </label>
+                <input
+                  type="text"
+                  id="project"
+                  name="project"
+                  value={formData.project}
+                  onChange={handleChange}
+                  className="form-input"
+                  placeholder="Project name"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <label htmlFor="startTime" className="form-label">
+                  Start Time
+                </label>
+                <input
+                  type="time"
+                  id="startTime"
+                  name="startTime"
+                  value={formData.startTime}
+                  onChange={handleChange}
+                  className="form-input"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="endTime" className="form-label">
+                  End Time
+                </label>
+                <input
+                  type="time"
+                  id="endTime"
+                  name="endTime"
+                  value={formData.endTime}
+                  onChange={handleChange}
+                  className="form-input"
+                />
+              </div>
+            </div>
+
+            {duration && (
+              <div className="rounded-md bg-gray-50 p-3">
+                <p className="text-sm font-medium text-gray-700">
+                  Duration: <span className="text-navy-600">{duration}</span>
+                </p>
+              </div>
+            )}
+
             <div>
-              <label htmlFor="startTime" className="mb-2 block text-sm font-medium text-navy-700">
-                Start Time
+              <label htmlFor="description" className="form-label">
+                Description
               </label>
-              <input
-                type="time"
-                id="startTime"
-                name="startTime"
-                value={formData.startTime}
+              <textarea
+                id="description"
+                name="description"
+                value={formData.description}
                 onChange={handleChange}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-navy-500 focus:ring-navy-500"
-                required
+                rows={4}
+                className="form-input"
+                placeholder="What did you work on?"
               />
             </div>
-            <div>
-              <label htmlFor="endTime" className="mb-2 block text-sm font-medium text-navy-700">
-                End Time
-              </label>
-              <input
-                type="time"
-                id="endTime"
-                name="endTime"
-                value={formData.endTime}
-                onChange={handleChange}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-navy-500 focus:ring-navy-500"
-              />
+
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate(timesheetId ? `/timesheets/${timesheetId}` : '/dashboard')}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="btn-primary"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Spinner size="sm" variant="white" className="mr-2" />
+                    {isEditing ? 'Updating...' : 'Saving...'}
+                  </>
+                ) : (
+                  isEditing ? 'Update Time Entry' : 'Save Time Entry'
+                )}
+              </Button>
             </div>
-          </div>
-
-          <div className="mb-4">
-            <label htmlFor="project" className="mb-2 block text-sm font-medium text-navy-700">
-              Project
-            </label>
-            <input
-              type="text"
-              id="project"
-              name="project"
-              value={formData.project}
-              onChange={handleChange}
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-navy-500 focus:ring-navy-500"
-              placeholder="Project name"
-            />
-          </div>
-
-          <div className="mb-6">
-            <label htmlFor="description" className="mb-2 block text-sm font-medium text-navy-700">
-              Description
-            </label>
-            <textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={4}
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-navy-500 focus:ring-navy-500"
-              placeholder="What did you work on?"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-300 text-gray-700"
-              onClick={() => navigate(-1)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="bg-navy-600 text-white hover:bg-navy-700"
-              disabled={loading}
-            >
-              {loading ? 'Saving...' : isEditing ? 'Update' : 'Save'}
-            </Button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </Layout>
   );

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
-import { format, addDays } from 'date-fns';
+import { format, addDays, parseISO } from 'date-fns';
 import { Layout } from '../components/layout';
+import { StatusBadge } from '../components/ui/status-badge';
+import { Spinner } from '../components/ui/spinner';
+import { Alert } from '../components/ui/alert';
 import { useTimesheetStore } from '../store/timesheetStore';
 
 export function PendingApprovals() {
@@ -20,6 +23,7 @@ export function PendingApprovals() {
   
   const [rejectComments, setRejectComments] = useState<{[key: string]: string}>({});
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     clearError();
@@ -32,6 +36,17 @@ export function PendingApprovals() {
     return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`;
   };
 
+  const formatDuration = (hours: number) => {
+    const wholeHours = Math.floor(hours);
+    const minutes = Math.round((hours - wholeHours) * 60);
+    
+    if (minutes === 0) {
+      return `${wholeHours}h`;
+    }
+    
+    return `${wholeHours}h ${minutes}m`;
+  };
+
   const handleApprove = async (id: string) => {
     if (!window.confirm('Are you sure you want to approve this timesheet?')) {
       return;
@@ -40,6 +55,12 @@ export function PendingApprovals() {
     setProcessingId(id);
     try {
       await approveTimesheet(id);
+      setSuccessMessage('Timesheet approved successfully!');
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setSuccessMessage('');
+      }, 5000);
     } catch (err) {
       console.error('Failed to approve timesheet:', err);
     } finally {
@@ -62,12 +83,19 @@ export function PendingApprovals() {
     setProcessingId(id);
     try {
       await rejectTimesheet(id, comments);
+      setSuccessMessage('Timesheet rejected successfully!');
+      
       // Clear the comments for this timesheet
       setRejectComments(prev => {
         const updated = {...prev};
         delete updated[id];
         return updated;
       });
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setSuccessMessage('');
+      }, 5000);
     } catch (err) {
       console.error('Failed to reject timesheet:', err);
     } finally {
@@ -85,20 +113,38 @@ export function PendingApprovals() {
   return (
     <Layout title="Pending Approvals" showBackButton backUrl="/dashboard">
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-600">
+        <Alert 
+          variant="error" 
+          className="mb-6"
+          onClose={clearError}
+        >
           {error}
-        </div>
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert 
+          variant="success" 
+          className="mb-6"
+          onClose={() => setSuccessMessage('')}
+        >
+          {successMessage}
+        </Alert>
       )}
 
       {loading && pendingApprovals.length === 0 ? (
-        <div className="flex justify-center py-8">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-navy-600 border-t-transparent"></div>
+        <div className="flex justify-center py-12">
+          <Spinner label="Loading pending approvals..." />
         </div>
       ) : pendingApprovals.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-          <p className="text-gray-600">No timesheets pending approval.</p>
+        <div className="card p-8 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h3 className="mt-4 text-lg font-medium text-gray-900">All caught up!</h3>
+          <p className="mt-2 text-gray-600">There are no timesheets pending approval.</p>
           <Button 
-            className="mt-4 bg-navy-600 text-white hover:bg-navy-700"
+            className="mt-6 btn-primary"
             onClick={() => navigate('/dashboard')}
           >
             Back to Dashboard
@@ -107,18 +153,21 @@ export function PendingApprovals() {
       ) : (
         <div className="space-y-6">
           {pendingApprovals.map((timesheet) => (
-            <div key={timesheet.id} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+            <div key={timesheet.id} className="card">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-navy-700">
                     Week: {formatWeekRange(timesheet.weekStarting)}
                   </h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Submitted: {timesheet.submittedAt ? format(new Date(timesheet.submittedAt), 'MMM d, yyyy') : 'N/A'}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Total Hours: {timesheet.totalHours.toFixed(1)}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-3">
+                    <StatusBadge status={timesheet.status} />
+                    <span className="text-sm text-gray-600">
+                      Total Hours: {formatDuration(timesheet.totalHours)}
+                    </span>
+                    <span className="text-sm text-gray-600">
+                      Submitted: {timesheet.submittedAt ? format(parseISO(timesheet.submittedAt), 'MMM d, yyyy') : 'N/A'}
+                    </span>
+                  </div>
                 </div>
                 <Button
                   variant="outline"
@@ -130,13 +179,13 @@ export function PendingApprovals() {
               </div>
 
               <div className="mb-4">
-                <label className="mb-2 block text-sm font-medium text-navy-700">
+                <label className="form-label">
                   Rejection Comments (required if rejecting)
                 </label>
                 <textarea
                   value={rejectComments[timesheet.id] || ''}
                   onChange={(e) => handleCommentChange(timesheet.id, e.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-navy-500 focus:ring-navy-500"
+                  className="form-input"
                   rows={3}
                   placeholder="Provide feedback on why the timesheet is being rejected..."
                 />
@@ -145,17 +194,32 @@ export function PendingApprovals() {
               <div className="flex justify-end gap-3">
                 <Button
                   variant="destructive"
+                  className="btn-danger"
                   onClick={() => handleReject(timesheet.id)}
                   disabled={processingId === timesheet.id}
                 >
-                  {processingId === timesheet.id ? 'Rejecting...' : 'Reject'}
+                  {processingId === timesheet.id && processingId === timesheet.id ? (
+                    <>
+                      <Spinner size="sm" variant="white" className="mr-2" />
+                      Rejecting...
+                    </>
+                  ) : (
+                    'Reject'
+                  )}
                 </Button>
                 <Button
-                  className="bg-navy-600 text-white hover:bg-navy-700"
+                  className="btn-primary"
                   onClick={() => handleApprove(timesheet.id)}
                   disabled={processingId === timesheet.id}
                 >
-                  {processingId === timesheet.id ? 'Approving...' : 'Approve'}
+                  {processingId === timesheet.id && processingId === timesheet.id ? (
+                    <>
+                      <Spinner size="sm" variant="white" className="mr-2" />
+                      Approving...
+                    </>
+                  ) : (
+                    'Approve'
+                  )}
                 </Button>
               </div>
             </div>
