@@ -15,7 +15,6 @@ module.exports = gql`
     createdAt: String
     updatedAt: String
   }
-
   input TimeEntryInput {
     date: String!
     startTime: String!

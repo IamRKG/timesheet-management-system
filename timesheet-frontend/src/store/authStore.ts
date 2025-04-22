@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService, User, LoginCredentials, RegisterData } from '../services/auth.service';
+import { extractErrorMessage } from '../utils/errorHandler';
 
 interface AuthState {
   token: string | null;
@@ -41,13 +42,12 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (error: any) {
           set({ 
-            error: error.message, 
+            error: extractErrorMessage(error), 
             loading: false 
           });
           throw error;
         }
-      },
-      
+      },      
       register: async (userData) => {
         set({ loading: true, error: null });
         try {
@@ -113,7 +113,7 @@ export const useAuthStore = create<AuthState>()(
         
         set({ loading: true, error: null });
         try {
-          await authService.changePassword(token, user.id, currentPassword, newPassword);
+          await authService.changePassword(token, currentPassword, newPassword);
           set({ loading: false });
         } catch (error: any) {
           set({ 
@@ -122,8 +122,7 @@ export const useAuthStore = create<AuthState>()(
           });
           throw error;
         }
-      },
-    }),
+      },    }),
     {
       name: 'auth-storage',
       partialize: (state) => ({ token: state.token, user: state.user }),

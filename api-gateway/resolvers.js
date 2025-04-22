@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { transformMongoDocument } = require('./src/utils/mongoTransformer');
 
 // Service URLs
 const AUTH_SERVICE = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
@@ -14,7 +15,7 @@ const resolvers = {
         const response = await axios.get(`${AUTH_SERVICE}/api/users/me`, {
           headers: { Authorization: token }
         });
-        return response.data;
+        return transformMongoDocument(response.data);
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to fetch user data');
       }
@@ -25,7 +26,7 @@ const resolvers = {
         const response = await axios.get(`${AUTH_SERVICE}/api/users/${id}`, {
           headers: { Authorization: token }
         });
-        return response.data;
+        return transformMongoDocument(response.data);
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to fetch user');
       }
@@ -36,12 +37,11 @@ const resolvers = {
         const response = await axios.get(`${AUTH_SERVICE}/api/users`, {
           headers: { Authorization: token }
         });
-        return response.data;
+        return transformMongoDocument(response.data);
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to fetch users');
       }
-    },
-    
+    },    
     // TimeSheet queries
     timeSheet: async (_, { id }, { token }) => {
       try {
@@ -217,12 +217,18 @@ const resolvers = {
           { weekStarting },
           { headers: { Authorization: token } }
         );
-        return response.data;
+        
+        // Ensure entries is always an array, even if empty
+        const timesheet = response.data;
+        if (!timesheet.entries) {
+          timesheet.entries = [];
+        }
+        
+        return timesheet;
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Failed to create timesheet');
       }
-    },
-    
+    },    
     submitTimeSheet: async (_, { id }, { token }) => {
       try {
         const response = await axios.post(
@@ -297,7 +303,40 @@ const resolvers = {
         throw new Error(error.response?.data?.message || 'Failed to reject timesheet');
       }
     },
-  }
-};
 
+    updateUser: async (_, { id, input }, { token }) => {
+      try {
+        const response = await axios.put(
+          `${AUTH_SERVICE}/api/users/${id}`,
+          input,
+          { headers: { Authorization: token } }
+        );
+        return response.data;
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Failed to update user profile');
+      }
+    },
+
+    changePassword: async (_, { currentPassword, newPassword }, { token }) => {
+      try {
+        // First, get the current user's ID from the token
+        const meResponse = await axios.get(`${AUTH_SERVICE}/api/users/me`, {
+          headers: { Authorization: token }
+        });
+        
+        const userId = meResponse.data.id || meResponse.data._id;
+        
+        // Then, call the change password endpoint
+        await axios.put(
+          `${AUTH_SERVICE}/api/users/${userId}/change-password`,
+          { currentPassword, newPassword },
+          { headers: { Authorization: token } }
+        );
+        
+        return true;
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Failed to change password');
+      }
+    },
+  }}
 module.exports = resolvers;

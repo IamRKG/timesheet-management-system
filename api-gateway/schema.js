@@ -1,3 +1,7 @@
+/**
+ * @deprecated This monolithic schema is being replaced by modular schemas in src/schema/
+ * Please use the modular schema files for any new development.
+ */
 const { gql } = require('apollo-server-express');
 
 const typeDefs = gql`
@@ -23,10 +27,10 @@ const typeDefs = gql`
     project: String
     description: String
     status: String!
+    timesheetId: ID
     createdAt: String!
     updatedAt: String!
-  }
-  
+  }  
   type TimeSheet {
     id: ID!
     userId: ID!
@@ -64,6 +68,13 @@ const typeDefs = gql`
     role: String!
     department: String
   }
+
+  input UserUpdateInput {
+    firstName: String
+    lastName: String
+    email: String
+    department: String
+  }
   
   # Queries
   type Query {
@@ -91,6 +102,8 @@ const typeDefs = gql`
     # Auth mutations
     register(input: UserInput!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!
+    updateUser(id: ID!, input: UserUpdateInput!): User!
+    changePassword(currentPassword: String!, newPassword: String!): Boolean!
     
     # TimeEntry mutations
     createTimeEntry(input: TimeEntryInput!): TimeEntry!
@@ -102,7 +115,5 @@ const typeDefs = gql`
     submitTimeSheet(id: ID!): TimeSheet!
     approveTimeSheet(id: ID!, comments: String): TimeSheet!
     rejectTimeSheet(id: ID!, comments: String!): TimeSheet!
-  }
-`;
-
+  }`;
 module.exports = typeDefs;

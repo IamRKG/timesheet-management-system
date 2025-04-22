@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { extractErrorMessage } from '../utils/errorHandler';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/graphql';
 
@@ -61,10 +62,9 @@ class AuthService {
 
       return response.data.data.login;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || error.message || 'Login failed');
+      throw new Error(extractErrorMessage(error));
     }
   }
-
   async register(userData: RegisterData): Promise<AuthResponse> {
     try {
       const response = await axios.post(API_URL, {
@@ -184,18 +184,17 @@ class AuthService {
     }
   }
 
-  async changePassword(token: string, userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<boolean> {
     try {
       const response = await axios.post(
         API_URL,
         {
           query: `
-            mutation ChangePassword($id: ID!, $currentPassword: String!, $newPassword: String!) {
-              changePassword(id: $id, currentPassword: $currentPassword, newPassword: $newPassword)
+            mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
+              changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
             }
           `,
           variables: {
-            id: userId,
             currentPassword,
             newPassword,
           },
@@ -216,7 +215,6 @@ class AuthService {
       throw new Error(error.response?.data?.message || error.message || 'Failed to change password');
     }
   }
-
   // For admin/manager use
   async getUsers(token: string): Promise<User[]> {
     try {
