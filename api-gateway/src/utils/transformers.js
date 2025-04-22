@@ -1,5 +1,6 @@
 /**
- * @deprecated Use mongoTransformer.transformMongoDocument instead
+ * Transform MongoDB document to GraphQL object
+ * Converts _id to id and handles nested objects and arrays
  */
 const transformMongoDocument = (doc) => {
   if (!doc) return null;
@@ -11,21 +12,18 @@ const transformMongoDocument = (doc) => {
   
   // Handle plain objects
   if (typeof doc === 'object' && doc !== null) {
-    const result = {};
+    const result = { ...doc };
     
     // Convert _id to id
     if (doc._id) {
       result.id = doc._id.toString();
+      delete result._id;
     }
     
-    // Copy all other fields
-    Object.keys(doc).forEach(key => {
-      if (key !== '_id') {
-        if (typeof doc[key] === 'object' && doc[key] !== null) {
-          result[key] = transformMongoDocument(doc[key]);
-        } else {
-          result[key] = doc[key];
-        }
+    // Process nested objects
+    Object.keys(result).forEach(key => {
+      if (typeof result[key] === 'object' && result[key] !== null) {
+        result[key] = transformMongoDocument(result[key]);
       }
     });
     
@@ -34,6 +32,7 @@ const transformMongoDocument = (doc) => {
   
   return doc;
 };
+
 module.exports = {
   transformMongoDocument
 };

@@ -10,6 +10,8 @@ import { PendingApprovals } from './pages/PendingApprovals'
 import { Profile } from './pages/Profile'
 import { ChangePassword } from './pages/ChangePassword'
 import { Unauthorized } from './pages/Unauthorized'
+import { Help } from './pages/Help'
+import { Documentation } from './pages/Documentation'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { useEffect } from 'react'
 import { useAuthStore } from './store/authStore'
@@ -31,6 +33,8 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
+        <Route path="/help" element={<Help />} />
+        <Route path="/documentation" element={<Documentation />} />
         
         {/* Protected routes - any authenticated user */}
         <Route path="/dashboard" element={

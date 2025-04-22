@@ -89,3 +89,29 @@ router.post('/login', async (req, res) => {
 });
 
 module.exports = router;
+// In services/auth-service/routes/auth.routes.js
+router.get('/verify-token', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1] || req.headers.authorization;
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      return res.json({ 
+        valid: true, 
+        decoded,
+        expiresAt: new Date(decoded.exp * 1000).toISOString()
+      });
+    } catch (error) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: error.message 
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});

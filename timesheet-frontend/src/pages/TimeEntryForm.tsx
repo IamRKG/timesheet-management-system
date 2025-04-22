@@ -35,6 +35,7 @@ export function TimeEntryForm() {
   
   const [formError, setFormError] = useState('');
   const [timesheetId, setTimesheetId] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // Extract timesheetId from query params if present
   useEffect(() => {
@@ -84,28 +85,10 @@ export function TimeEntryForm() {
     }));
   };
 
-  const calculateDuration = () => {
-    if (!formData.startTime || !formData.endTime) return null;
-    
-    const [startHours, startMinutes] = formData.startTime.split(':').map(Number);
-    const [endHours, endMinutes] = formData.endTime.split(':').map(Number);
-    
-    let durationInMinutes = (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
-    
-    // Handle case where end time is on the next day
-    if (durationInMinutes < 0) {
-      durationInMinutes += 24 * 60;
-    }
-    
-    const hours = Math.floor(durationInMinutes / 60);
-    const minutes = durationInMinutes % 60;
-    
-    return `${hours}h ${minutes}m`;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
+    setDateError(null);
     clearError();
 
     try {
@@ -114,17 +97,49 @@ export function TimeEntryForm() {
         navigate(`/time-entries/${id}`);
       } else {
         const newEntry = await createTimeEntry(formData);
-        if (timesheetId) {
-          navigate(`/timesheets/${timesheetId}`);
-        } else if (newEntry.timesheetId) {
+        if (newEntry.timesheetId) {
           navigate(`/timesheets/${newEntry.timesheetId}`);
         } else {
           navigate('/dashboard');
         }
       }
     } catch (err: any) {
-      setFormError(err.message);
+      console.error('Error submitting time entry form:', err);
+      
+      const errorMessage = err.message || 'An error occurred while saving the time entry';
+      
+      // Check if the error is about duplicate entries
+      if (errorMessage.toLowerCase().includes('already exists') || 
+          errorMessage.toLowerCase().includes('duplicate')) {
+        setDateError(errorMessage);
+        // Scroll to and focus the date field
+        const dateField = document.getElementById('date');
+        if (dateField) {
+          dateField.scrollIntoView({ behavior: 'smooth' });
+          dateField.focus();
+        }
+      } else {
+        // For other errors
+        setFormError(errorMessage);
+      }
     }
+  };
+  const calculateDuration = () => {
+    if (!formData.startTime || !formData.endTime) return null;
+    
+    const [startHours, startMinutes] = formData.startTime.split(':').map(Number);
+    const [endHours, endMinutes] = formData.endTime.split(':').map(Number);
+    
+    let durationMinutes = (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes);
+    
+    if (durationMinutes < 0) {
+      durationMinutes += 24 * 60; // Add 24 hours if end time is on next day
+    }
+    
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+    
+    return `${hours}h ${minutes}m`;
   };
 
   const duration = calculateDuration();

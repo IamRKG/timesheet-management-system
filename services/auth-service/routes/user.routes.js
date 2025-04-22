@@ -75,14 +75,17 @@ router.put('/:id', verifyToken, async (req, res) => {
 });
 
 // Change password
-router.put('/:id/change-password', verifyToken, async (req, res) => {
+router.put('/change-password', verifyToken, async (req, res) => {
   try {
-    // Users can only change their own password
-    if (req.user._id.toString() !== req.params.id) {
-      return res.status(403).json({ message: 'Access denied' });
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
     }
     
-    const { currentPassword, newPassword } = req.body;
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+    }
     
     // Verify current password
     const isMatch = await req.user.comparePassword(currentPassword);
@@ -99,7 +102,6 @@ router.put('/:id/change-password', verifyToken, async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
-
 // Deactivate user (admin only)
 router.put('/:id/deactivate', verifyToken, isAdmin, async (req, res) => {
   try {
